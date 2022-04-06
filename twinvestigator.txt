@@ -1,0 +1,231 @@
+  var cal = 0.25/1069.33
+  var x, y, dx, dy, q1, q2, q3, q4, z
+  var angle = 0
+  var a = angle*PI/180;
+  var nProfiles = 100; 
+  var nAvg = 10; 
+  var nFilt = 5; 
+  var minT = 1; 
+  var Thold = 200;
+  macro 'Twin Density Tool - C000L002fL507fL90bfLb0dfLd0ff'{
+  Overlay.clear
+  // Get user input settings
+  title = "Grain information";
+  
+  Dialog.create("Set twin detection parameters");
+  Dialog.addString("Grain information:", title);
+  Dialog.addNumber("nProfiles:", nProfiles);
+  Dialog.addNumber("Moving average span", nAvg);
+  Dialog.addNumber("Median filter span", nFilt);
+  Dialog.addNumber("Minimum twin  spacing", minT); 
+  Dialog.addNumber("Threshold", Thold);
+  Dialog.addCheckbox("Invert selection",false);
+  Dialog.show();
+  title = Dialog.getString();
+  nProfiles = Dialog.getNumber();
+  nAvg = Dialog.getNumber();
+  nFilt = Dialog.getNumber();
+  minT = Dialog.getNumber();
+  Thold = Dialog.getNumber();
+  inv = Dialog.getCheckbox();
+  // Get line coordinates and profile length
+  getSelectionCoordinates(x, y);
+  dx = (x[1]-x[0]);
+  dy = (y[1]-y[0]);
+  d=sqrt(dx*dx+dy*dy);
+  print('length = ' + (d-2*nAvg)*cal + ' mm');
+
+  // determine angle of profile
+  q1=0; q2orq3=2; q4=3; //quadrant
+    if (dx!=0)
+          angle = atan(dy/dx);
+      else {
+          if (dy>=0)
+              angle = PI/2;
+          else
+      }
+      angle = (180/PI)*angle;
+      if (dx>=0 && dy>=0)
+           quadrant = q1;
+      else if (dx<0)
+          quadrant = q2orq3;
+      else
+          quadrant = q4;
+      if (quadrant==q2orq3)
+          angle = angle+180.0;
+      else if (quadrant==q4)
+          angle = angle+360.0;
+      a = angle*PI/180; 
+      print("angle = " + angle + "degrees"); 
+      // Local stacking 
+      z = getProfile;
+      i1= z.length;
+      for (k=0; k<nProfiles; k++) {
+ 	makeLine(x[0]+(k-floor(nProfiles/2))*cos(angle*PI/180+PI/2), y[0]+(k-floor(nProfiles/2)*sin(angle*PI/180+PI/2)), x[1]+(k-floor(nProfiles/2))*cos(angle*PI/180+PI/2), y[1]+(k-floor(nProfiles/2)*sin(angle*PI/180+PI/2)));
+	zLocal = getProfile;
+  	for (i=0; i<i1; i++) {
+		z[i] = z[i]+zLocal[i];
+	}
+      }
+      zOld = (z/nProfiles);
+      if (inv)
+	z = -1* zOld;
+      
+      makeLine(x[0],y[0],x[1],y[1]);
+      Overlay.drawLine(x[0]-floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[0]-floor(nProfiles/2)*sin(angle*PI/180+PI/2),x[1]-floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[1]-floor(nProfiles/2)*sin(angle*PI/180+PI/2));
+      Overlay.drawLine(x[0]+floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[0]+floor(nProfiles/2)*sin(angle*PI/180+PI/2),x[1]+floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[1]+floor(nProfiles/2)*sin(angle*PI/180+PI/2));
+      //Overlay.drawLine(x[0]+floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[0]+floor(nProfiles/2)*sin(angle*PI/180+PI/2),x[0]-floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[0]-floor(nProfiles/2)*sin(angle*PI/180+PI/2));
+      //Overlay.drawLine(x[1]+floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[1]+floor(nProfiles/2)*sin(angle*PI/180+PI/2),x[1]-floor(nProfiles/2)*cos(angle*PI/180+PI/2), y[1]-floor(nProfiles/2)*sin(angle*PI/180+PI/2));
+
+      // Moving window averaging to remove large wavelength variation
+      xVals = newArray();
+      zVals = newArray();
+      span = -floor(-nAvg/2);
+      for (i = span; i<i1-span; i++) {
+	zLocal = 0; // initialise kernel
+	for (j = 0; j < nAvg; j++) {
+		zLocal = zLocal + z[i+j-span];
+	}
+                        xVals = Array.concat(xVals, i);
+	zVals = Array.concat(zVals, z[i]-zLocal/nAvg);
+      }
+
+      // Median filtering to highlight twin boundaries
+      xValsOld = xVals;
+      zValsOld = zVals;
+      xVals = newArray();
+      zMedFilt = newArray();
+      i1= zVals.length;
+      span = -floor(-nFilt/2);
+      for (i = span; i<i1-span; i++) {
+	zLocal = Array.slice(zVals, i-span, i+span);
+	zLocal = Array.sort(zLocal);
+	zMedFilt = Array.concat(zMedFilt, zLocal[-floor(-nFilt/2)]);
+                        xVals = Array.concat(xVals, xValsOld[i]);
+       }
+   Plot.create("Title", "X-axis Label", "Y-axis Label", xVals, zMedFilt);
+  // Boundary finding routine
+  // Find end of high grayscale region
+  //i1 = zMedFilt.length;
+  //i1 = zPlot.length;
+  //xVals = newArray();
+
+  //zVal = newArray();
+  //yPos = newArray();
+  //iLast = -100;
+  //for(i=2; i<i1-2; i++) {
+	//if((zMedFilt[i+1]-zMedFilt[i]) < 2 && i > iLast+minT && zMedFilt[i]>zMedFilt[i-2] && zMedFilt[i] > zMedFilt[i+2]) {
+		//xPos = Array.concat(xVals, xValsOld[i]);
+		//yPos = Array.concat(yPos, i*sin(angle*PI/180));
+		//zVal = Array.concat(zVal, zMedFilt[i]);
+		//iLast = i;
+	//}
+	//else{
+	//}
+ //}
+//  for(i=2; i<i1-2; i++) {
+//	if( i > iLast+minT && zPlot[i] > zPlot[i-1] && zPlot[i]>zPlot[i+1] && zPlot[i] > zPlot[i-2] && zPlot[i]>zPlot[i+2]) {
+//		xPos = Array.concat(xPos, xVals[i]);
+//		xPlot = Array.concat(xPlot, xVals[i]*cal);
+//		yPos = Array.concat(yPos, (i)*sin(angle*PI/180));
+//		zVal = Array.concat(zVal, zPlot[i]);
+//		iLast = i;
+//	}
+//	else{
+//	}
+//  }
+  // Find start of low grayscale value
+  //Plot.add("x", xPlot, zVal);
+  i1 = zMedFilt.length;
+  xValsOld = xVals;
+  zVals = newArray();
+  xVals = newArray();
+  iLast = -100;
+  for(i=2; i<i1-3; i++) {
+	if(zMedFilt[i+1] == zMedFilt[i]  && i > iLast+minT && zMedFilt[i] > 0 && zMedFilt[i]>zMedFilt[i+2] && zMedFilt[i]>zMedFilt[i+3] && zMedFilt[i] > Thold) {
+		xVals = Array.concat(xVals, xValsOld[i]);
+		zVals = Array.concat(zVals, zMedFilt[i]);
+		iLast = i;
+	}
+	else{
+	}
+ }
+  //for(i=2; i<i1-2; i++) {
+//	if( i > iLast+minT && zPlot[i] < zPlot[i-1] && zPlot[i]<zPlot[i+1] && zPlot[i] < zPlot[i-2] && zPlot[i]<zPlot[i+2]) {
+//		xPos2 = Array.concat(xPos2, xVals[i]);
+//		xPlot2 = Array.concat(xPlot2, xVals[i]*cal);
+//		yPos2 = Array.concat(yPos2, i*sin(angle*PI/180));
+//		zVal2 = Array.concat(zVal2, zPlot[i]);
+//		iLast = i;
+//	}
+//	else{
+//	}
+//}
+  //Plot.add("boxes", xPlot2, zVal2);
+  // Finite difference loop
+
+  //xValsOld = xVals;
+  //dz = newArray();
+  //xVals = newArray();
+  //	for(i = 1; i<i1-1; i++) {
+  //		dz = Array.concat(dz, zMedFilt[i]-zMedFilt[i-1]);
+  //		xVals = Array.concat(xVals, xValsOld[i]);
+  //	}
+    //Plot.create("Title", "X-axis Label", "Y-axis Label", xVals, dz);
+    //i1 = dz.length;
+    //xValsOld = xVals;
+    //xVals = newArray();
+    //dzVals = newArray();
+   
+    //for(i=minLocal; i<i1-minLocal; i++) {
+    //	c = 0;
+    //	zLocal = Array.slice(dz,i-minLocal,i+minLocal);
+   // 	for (k=0; k<zLocal.length; k++) {
+//		if(dz[i] > zLocal[k]){
+   //			c +=  1;
+//		}
+//		else{
+//		}
+//	}
+//	if(c == zLocal.length-1){
+//		xVals = Array.concat(xVals, xValsOld[i]);
+//		dzVals = Array.concat(dzVals, dz[i]);
+//	}
+//	else{
+//	}	
+  //}
+  Plot.add("x", xVals, zVals);
+  xValsOld = xVals;
+  yVals = newArray();
+  xVals = newArray();
+  for (i = 0; i < xValsOld.length; i++) {
+  	yVals = Array.concat(yVals,xValsOld[i]*sin(angle*PI/180));
+  	xVals = Array.concat(xVals,xValsOld[i]*cos(angle*PI/180));
+  }
+  i1 = xVals.length;
+  for(i=1; i<i1; i++) { 
+	y1 = y[0]+yVals[i]-floor(nProfiles/2)*sin(angle*PI/180+PI/2);
+	y2 = y[0]+yVals[i]+floor(nProfiles/2)*sin(angle*PI/180+PI/2);
+	x1 = x[0]+xVals[i]-floor(nProfiles/2)*cos(angle*PI/180+PI/2);
+	x2 = x[0]+xVals[i]+floor(nProfiles/2)*cos(angle*PI/180+PI/2);
+	Overlay.drawLine(x1, y1, x2, y2);
+	Overlay.add
+  }		
+  Overlay.show;
+  print('Twin density 1 = ' + xVals.length/(d*cal) + ' mm^-1');
+   run("Clear Results");
+   setResult("Profile name", 0, title);
+   setResult("Profile angle", 0, angle);
+   setResult("Profile stacks", 0, nProfiles);
+   setResult("Moving average", 0, nAvg);
+   setResult("Median filter", 0, nFilt);
+   setResult("Minimum spacing", 0, minT);
+   setResult("Profile length (mm)", 0, d*cal-2*nAvg);
+   setResult("Twin count 1", 0, xVals.length);
+   updateResults();
+}
+
+macro 'Twin Density Tool Options' {
+  var cal = 0.25/1069.33;
+  cal = getNumber("pixels per mm", cal);
+}
